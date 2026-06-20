@@ -7,16 +7,15 @@ GIF Login Screen is a RuneLite plugin that plays a looping GIF as the login scre
 Place your GIF at:
 
 ```text
-%USERPROFILE%\.runelite\login.gif
+%USERPROFILE%\.runelite\gif-login\login.gif
 ```
 
-Then enable `GIF Login Screen` in RuneLite.
+Then enable `GIF Login Screen` in RuneLite. The plugin creates the `gif-login` folder automatically and only accesses files inside that plugin-specific folder.
 
 The plugin only runs on the login screen. It restores RuneLite's normal login background behavior when disabled or when leaving the login screen.
 
 ## Settings
 
-- GIF path
 - Fallback FPS
 - Stretch
 

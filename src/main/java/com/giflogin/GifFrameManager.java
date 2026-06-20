@@ -18,6 +18,7 @@ import javax.imageio.ImageReader;
 import javax.imageio.metadata.IIOMetadata;
 import javax.imageio.stream.ImageInputStream;
 import javax.inject.Inject;
+import net.runelite.client.RuneLite;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.NamedNodeMap;
@@ -30,6 +31,8 @@ class GifFrameManager
     private static final int LOGIN_HEIGHT = 864;
     private static final String GIF_STREAM_METADATA = "javax_imageio_gif_stream_1.0";
     private static final String GIF_IMAGE_METADATA = "javax_imageio_gif_image_1.0";
+    private static final File GIF_DIRECTORY = new File(RuneLite.RUNELITE_DIR, "gif-login");
+    private static final File GIF_FILE = new File(GIF_DIRECTORY, "login.gif");
 
     private final GifLoginConfig config;
     private final List<BufferedImage> frames = new ArrayList<>();
@@ -46,7 +49,13 @@ class GifFrameManager
     {
         clear();
 
-        File file = new File(config.gifPath());
+        if (!GIF_DIRECTORY.exists() && !GIF_DIRECTORY.mkdirs())
+        {
+            log.warn("Unable to create GIF Login Screen directory: {}", GIF_DIRECTORY);
+            return;
+        }
+
+        File file = GIF_FILE;
         if (!file.isFile())
         {
             log.warn("GIF login background not found: {}", file);
