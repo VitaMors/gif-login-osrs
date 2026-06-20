@@ -1,0 +1,41 @@
+plugins {
+    id "java"
+}
+
+group = "com.giflogin"
+version = "1.0.0"
+
+def runeLiteVersion = "latest.release"
+def pluginMainClass = "com.giflogin.GifLoginPluginTest"
+
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+dependencies {
+    compileOnly "net.runelite:client:${runeLiteVersion}"
+
+    testImplementation "junit:junit:4.13.2"
+    testImplementation "net.runelite:client:${runeLiteVersion}"
+    testImplementation "net.runelite:jshell:${runeLiteVersion}"
+}
+
+sourceSets {
+    test {
+        compileClasspath += sourceSets.main.output
+        runtimeClasspath += sourceSets.main.output
+    }
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = "UTF-8"
+    options.release.set(11)
+}
+
+tasks.register("run", JavaExec) {
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = pluginMainClass
+    jvmArgs "-ea"
+    args "--developer-mode", "--debug"
+}
