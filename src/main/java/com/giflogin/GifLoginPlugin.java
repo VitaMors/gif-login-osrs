@@ -1,9 +1,6 @@
 package com.giflogin;
 
 import com.google.inject.Provides;
-import java.awt.image.BufferedImage;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
@@ -25,6 +22,8 @@ import net.runelite.client.util.ImageUtil;
 )
 public class GifLoginPlugin extends Plugin
 {
+    private static final long UPDATE_INTERVAL_MILLIS = 16L;
+
     @Inject
     private Client client;
 
@@ -34,37 +33,48 @@ public class GifLoginPlugin extends Plugin
     @Inject
     private GifFrameManager frameManager;
 
-    @Inject
-    private GifLoginConfig config;
-
-    private final ScheduledExecutorService animationExecutor = Executors.newScheduledThreadPool(2, runnable ->
-    {
-        Thread thread = new Thread(runnable, "gif-login-screen-animator");
-        thread.setDaemon(true);
-        return thread;
-    });
-    private final Map<Integer, SpritePixels> spriteCache = new HashMap<>();
+    private ScheduledExecutorService animationExecutor;
     private ScheduledFuture<?> animationTask;
+    private SpritePixels currentSprite;
+    private long nextFrameAtNanos;
+    private boolean decoderRunning;
     private boolean loginScreenApplied;
-    private int lastFrameIndex = -1;
 
     @Override
     protected void startUp()
     {
-        frameManager.load();
-        loginScreenApplied = false;
-        lastFrameIndex = -1;
-        startAnimation();
+        resetPlayback();
+        startDecoder();
+        animationExecutor = Executors.newSingleThreadScheduledExecutor(runnable ->
+        {
+            Thread thread = new Thread(runnable, "gif-login-screen-animator");
+            thread.setDaemon(true);
+            return thread;
+        });
+        animationTask = animationExecutor.scheduleAtFixedRate(
+            () -> clientThread.invoke(this::updateLoginScreenFrame),
+            0L,
+            UPDATE_INTERVAL_MILLIS,
+            TimeUnit.MILLISECONDS
+        );
     }
 
     @Override
     protected void shutDown()
     {
-        stopAnimation();
-        frameManager.clear();
-        spriteCache.clear();
-        loginScreenApplied = false;
-        lastFrameIndex = -1;
+        if (animationTask != null)
+        {
+            animationTask.cancel(false);
+            animationTask = null;
+        }
+        if (animationExecutor != null)
+        {
+            animationExecutor.shutdownNow();
+            animationExecutor = null;
+        }
+        frameManager.stop();
+        decoderRunning = false;
+        resetPlayback();
 
         clientThread.invoke(() ->
         {
@@ -73,64 +83,89 @@ public class GifLoginPlugin extends Plugin
         });
     }
 
-    private void startAnimation()
-    {
-        long frameDuration = Math.max(16L, 1000L / Math.max(1, config.fps()));
-        animationTask = animationExecutor.scheduleAtFixedRate(
-            () -> clientThread.invoke(this::updateLoginScreenFrame),
-            0L,
-            frameDuration,
-            TimeUnit.MILLISECONDS
-        );
-    }
-
-    private void stopAnimation()
-    {
-        if (animationTask != null)
-        {
-            animationTask.cancel(false);
-            animationTask = null;
-        }
-
-    }
-
     private void updateLoginScreenFrame()
     {
         GameState gameState = client.getGameState();
-        if (gameState != GameState.LOGIN_SCREEN && gameState != GameState.LOGIN_SCREEN_AUTHENTICATOR)
+        if (isRestoreState(gameState))
         {
-            if (loginScreenApplied)
-            {
-                client.setLoginScreen(null);
-                client.setShouldRenderLoginScreenFire(true);
-                loginScreenApplied = false;
-            }
+            stopAfterLogin();
             return;
         }
 
-        int frameIndex = frameManager.getCurrentFrameIndex();
-        if (frameIndex == -1 || frameIndex == lastFrameIndex)
+        if (!isLoginFlowState(gameState))
         {
             return;
         }
 
-        SpritePixels sprite = spriteCache.get(frameIndex);
-        if (sprite == null)
+        startDecoder();
+        long now = System.nanoTime();
+        if (currentSprite != null && now < nextFrameAtNanos)
         {
-            BufferedImage frame = frameManager.getFrame(frameIndex);
-            if (frame == null)
-            {
-                return;
-            }
-
-            sprite = ImageUtil.getImageSpritePixels(frame, client);
-            spriteCache.put(frameIndex, sprite);
+            return;
         }
 
-        client.setLoginScreen(sprite);
-        client.setShouldRenderLoginScreenFire(false);
-        loginScreenApplied = true;
-        lastFrameIndex = frameIndex;
+        GifFrameManager.DecodedFrame frame = frameManager.pollFrame();
+        if (frame == null)
+        {
+            return;
+        }
+
+        try
+        {
+            currentSprite = ImageUtil.getImageSpritePixels(frame.getImage(), client);
+            client.setLoginScreen(currentSprite);
+            client.setShouldRenderLoginScreenFire(false);
+            loginScreenApplied = true;
+            nextFrameAtNanos = now + TimeUnit.MILLISECONDS.toNanos(frame.getDurationMillis());
+        }
+        finally
+        {
+            frame.release();
+        }
+    }
+
+    private void startDecoder()
+    {
+        if (!decoderRunning)
+        {
+            frameManager.start();
+            decoderRunning = true;
+        }
+    }
+
+    private void stopAfterLogin()
+    {
+        if (decoderRunning)
+        {
+            frameManager.stop();
+            decoderRunning = false;
+        }
+        if (loginScreenApplied)
+        {
+            client.setLoginScreen(null);
+            client.setShouldRenderLoginScreenFire(true);
+        }
+        resetPlayback();
+    }
+
+    private void resetPlayback()
+    {
+        currentSprite = null;
+        nextFrameAtNanos = 0L;
+        loginScreenApplied = false;
+    }
+
+    static boolean isLoginFlowState(GameState gameState)
+    {
+        return gameState == GameState.LOGIN_SCREEN
+            || gameState == GameState.LOGIN_SCREEN_AUTHENTICATOR
+            || gameState == GameState.LOGGING_IN
+            || gameState == GameState.LOADING;
+    }
+
+    static boolean isRestoreState(GameState gameState)
+    {
+        return gameState == GameState.LOGGED_IN || gameState == GameState.HOPPING;
     }
 
     @Provides

@@ -19,4 +19,6 @@ The plugin only runs on the login screen. It restores RuneLite's normal login ba
 - Fallback FPS
 - Stretch
 
-The plugin uses the GIF's own frame timing. `Fallback FPS` is only used when a GIF frame has no timing metadata. For best results, use a looping GIF with a 16:9-style frame. Large GIFs work, but smaller files will load faster and use less memory. Large files wont work very well keep below 50mb file size.
+The plugin streams the GIF on a background thread and keeps at most three decoded frames in memory. It uses the GIF's own frame timing; `Fallback FPS` is only used when a frame has no timing metadata.
+
+With `Stretch` enabled, each frame is stretched to the full login canvas. With it disabled, the aspect ratio is preserved and excess edges are cropped. GIFs whose decoded source frame exceeds the 32 MiB safety limit are rejected with a warning.
