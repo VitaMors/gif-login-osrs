@@ -15,6 +15,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.LockSupport;
 import javax.imageio.IIOImage;
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
@@ -80,12 +81,12 @@ class GifFrameManager
         generation.incrementAndGet();
         if (decoderTask != null)
         {
-            decoderTask.cancel(true);
+            decoderTask.cancel(false);
             decoderTask = null;
         }
         if (decoderExecutor != null)
         {
-            decoderExecutor.shutdownNow();
+            decoderExecutor.shutdown();
             decoderExecutor = null;
         }
         clearBuffer();
@@ -126,11 +127,6 @@ class GifFrameManager
                     log.info("Streaming GIF login background from {} with at most {} prefetched frames", GIF_FILE, BUFFER_CAPACITY);
                 }
             }
-            catch (InterruptedException ex)
-            {
-                Thread.currentThread().interrupt();
-                return;
-            }
             catch (IOException | RuntimeException ex)
             {
                 if (isActive(activeGeneration))
@@ -142,7 +138,7 @@ class GifFrameManager
         }
     }
 
-    private int decodeStream(ImageInputStream stream, long activeGeneration) throws IOException, InterruptedException
+    private int decodeStream(ImageInputStream stream, long activeGeneration) throws IOException
     {
         ImageReader reader = getGifReader();
         if (reader == null)
@@ -221,21 +217,22 @@ class GifFrameManager
         }
     }
 
-    private boolean offerFrame(DecodedFrame frame, long activeGeneration) throws InterruptedException
+    private boolean offerFrame(DecodedFrame frame, long activeGeneration)
     {
         while (isActive(activeGeneration))
         {
-            if (frameBuffer.offer(frame, 100L, TimeUnit.MILLISECONDS))
+            if (frameBuffer.offer(frame))
             {
                 return true;
             }
+            LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(10L));
         }
         return false;
     }
 
     private boolean isActive(long activeGeneration)
     {
-        return generation.get() == activeGeneration && !Thread.currentThread().isInterrupted();
+        return generation.get() == activeGeneration;
     }
 
     private void clearBuffer()

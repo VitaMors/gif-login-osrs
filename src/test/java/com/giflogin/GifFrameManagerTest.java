@@ -84,7 +84,6 @@ public class GifFrameManagerTest
                 }
                 catch (InterruptedException ex)
                 {
-                    Thread.currentThread().interrupt();
                     throw new IOException("Interrupted", ex);
                 }
                 return ImageIO.createImageInputStream(new ByteArrayInputStream(createGif(1, 1)));

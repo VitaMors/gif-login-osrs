@@ -69,7 +69,7 @@ public class GifLoginPlugin extends Plugin
         }
         if (animationExecutor != null)
         {
-            animationExecutor.shutdownNow();
+            animationExecutor.shutdown();
             animationExecutor = null;
         }
         frameManager.stop();
